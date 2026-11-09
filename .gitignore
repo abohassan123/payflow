@@ -1,0 +1,30 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Go
+services/*/bin/
+coverage.out
+
+# Python (later phases)
+__pycache__/
+.venv/
+*.pyc
+
+# dbt (Phase 5)
+target/
+dbt_packages/
+logs/
+
+# Terraform (Phase 10)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

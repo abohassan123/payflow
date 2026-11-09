@@ -1,0 +1,7 @@
+# Keep the build context small and never send secrets into an image.
+.git
+*.md
+*_test.go
+.env
+bin/
+coverage.out

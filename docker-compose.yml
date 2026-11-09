@@ -1,0 +1,76 @@
+# PayFlow local stack. Each phase adds services to this file.
+# Usage: make up   (reads variables from .env - copy .env.example first)
+name: payflow
+
+services:
+  # ---------------------------------------------------------------------------
+  # Phase 1 - OLTP database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17
+    container_name: payflow-postgres
+    # Server settings passed as flags. wal_level=logical is not needed until
+    # Phase 2 (CDC), but changing it later requires a restart, so set it now.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - log_min_duration_statement=500   # log queries slower than 500 ms
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Read by infra/postgres/init/02_roles.sh
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      READONLY_DB_USER: ${READONLY_DB_USER}
+      READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data                       # survives `make down`
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro  # runs once, on an empty volume
+      - ./infra/postgres/queries:/queries:ro                  # for \i inside psql
+    healthcheck:
+      # -h 127.0.0.1 forces TCP: during first-start init the server only listens
+      # on a Unix socket, so this check passes only once init has finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Phase 1 - payment traffic generator (Go)
+  # ---------------------------------------------------------------------------
+  simulator:
+    build: ./services/simulator
+    image: payflow/simulator:dev
+    container_name: payflow-simulator
+    environment:
+      DATABASE_URL: postgres://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      SIM_TPS: ${SIM_TPS:-5}
+      SIM_FRAUD_RATE: ${SIM_FRAUD_RATE:-0.01}
+      SIM_REFUND_RATE: ${SIM_REFUND_RATE:-0.05}
+      SIM_DUPLICATE_RATE: ${SIM_DUPLICATE_RATE:-0.02}
+      SIM_SEED: ${SIM_SEED:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "2112:2112"   # /metrics and /healthz
+    depends_on:
+      postgres:
+        condition: service_healthy   # wait for init scripts to finish
+    stop_grace_period: 20s           # time for graceful shutdown (SIGTERM -> drain)
+    restart: unless-stopped
+
+volumes:
+  pgdata:

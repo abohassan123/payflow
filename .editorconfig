@@ -1,0 +1,18 @@
+root = true
+
+[*]
+# LF line endings matter on Windows: shell scripts break with CRLF
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+[*.{yml,yaml,sql,py,json,md}]
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+
+[{*.go,Makefile}]
+indent_style = tab
